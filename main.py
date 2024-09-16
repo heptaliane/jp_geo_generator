@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+import os
 from typing import Annotated, Literal
 
 import click
@@ -19,23 +20,46 @@ def get_z_scale(z: int) -> float:
     return GEO_SIZE / xy_length
 
 
-def download_geo_data(
-    x: int,
-    y: int,
-    z: int,
-) -> Annotated[npt.NDArray[np.float32], Literal[GEO_SIZE, GEO_SIZE]]:
-    url = GEO_SOURCE_URL.format(x=x, y=y, z=z)
-    res = requests.get(url)
+class GeoDataProvider:
+    def __init__(self, cache_path: str = ".cache.npz"):
+        self._cache_path = cache_path
+        self._cache = {}
+        if os.path.exists(cache_path):
+            self._cache = np.load(cache_path)
 
-    if res.status_code != 200:
-        raise ValueError(res.content)
+    def _download_geo_data(
+        self,
+        x: int,
+        y: int,
+        z: int,
+    ) -> Annotated[npt.NDArray[np.float32], Literal[GEO_SIZE, GEO_SIZE]]:
+        url = GEO_SOURCE_URL.format(x=x, y=y, z=z)
+        res = requests.get(url)
 
-    arr = [
-        [GEO_ERR_VALUE if h == "e" else float(h) for h in line.split(",")]
-        for line in res.content.decode("utf-8").split("\n")
-        if len(line) > 0
-    ]
-    return np.asarray(arr, dtype=np.float32)
+        if res.status_code != 200:
+            raise ValueError(res.content)
+
+        arr = [
+            [GEO_ERR_VALUE if h == "e" else float(h) for h in line.split(",")]
+            for line in res.content.decode("utf-8").split("\n")
+            if len(line) > 0
+        ]
+        return np.asarray(arr, dtype=np.float32)
+
+    def get(
+        self,
+        x: int,
+        y: int,
+        z: int,
+    ) -> Annotated[npt.NDArray[np.float32], Literal[GEO_SIZE, GEO_SIZE]]:
+        key = f"{x}-{y}-{z}"
+
+        if key not in self._cache:
+            data = self._download_geo_data(x, y, z)
+            self._cache[key] = data
+            np.savez_compressed(self._cache_path, **self._cache)
+
+        return self._cache[key]
 
 
 def concat_geo_data(
@@ -119,7 +143,8 @@ def main(
     output: str,
     size: float,
 ):
-    data = download_geo_data(x, y, z)
+    geo_provider = GeoDataProvider()
+    data = geo_provider.get(x, y, z)
 
     z_scale = get_z_scale(z)
     data[data != GEO_ERR_VALUE] *= z_scale
