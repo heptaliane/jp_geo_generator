@@ -107,6 +107,7 @@ def create_triangles(
 def create_polygon(
     data: Annotated[npt.NDArray[np.float32], Literal["N", "N"]],
 ) -> Annotated[npt.NDArray[np.float32], Literal["N", 3, 3]]:
+    vertices = create_vertices(data)
     padded = np.pad(data, (0, 1), constant_values=(0, GEO_ERR_VALUE))
 
     val_mask_0 = padded[:-1, :-1] != GEO_ERR_VALUE
@@ -164,10 +165,13 @@ def create_polygon(
             create_triangles(indices[edge_mask_13], offsets[[3, 5, 7]]),
             create_triangles(indices[edge_mask_23], offsets[[2, 3, 6]]),
             create_triangles(indices[edge_mask_23], offsets[[3, 6, 7]]),
+            create_triangles(indices[0, :][val_mask_01[0, :]], offsets[[0, 1, 4]]),
+            create_triangles(indices[0, :][val_mask_01[0, :]], offsets[[1, 4, 5]]),
+            create_triangles(indices[:, 0][val_mask_02[:, 0]], offsets[[0, 2, 4]]),
+            create_triangles(indices[:, 0][val_mask_02[:, 0]], offsets[[2, 4, 6]]),
         ]
     )
 
-    vertices = create_vertices(data)
     return vertices[triangles]
 
 
