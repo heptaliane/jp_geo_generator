@@ -81,9 +81,16 @@ def create_vertices(
 ) -> Annotated[npt.NDArray[np.uint32], Literal["N", "N", 3]]:
     xlen, _ = data.shape
     indices = create_index_matrix(data)
-    vertices = np.stack((indices % xlen, indices // xlen, data))
 
-    return np.transpose(vertices, axes=(1, 2, 0)).reshape(-1, 3)
+    vertices = np.transpose(
+        np.stack((indices % xlen, indices // xlen, data)),
+        axes=(1, 2, 0),
+    ).reshape(-1, 3)
+
+    bottom_vertices = np.copy(vertices)
+    bottom_vertices[:, 2] = 0
+
+    return np.concat((vertices, bottom_vertices))
 
 
 def create_triangles(
@@ -102,25 +109,61 @@ def create_polygon(
 ) -> Annotated[npt.NDArray[np.float32], Literal["N", 3, 3]]:
     padded = np.pad(data, (0, 1), constant_values=(0, GEO_ERR_VALUE))
 
-    val_mask_00 = padded[:-1, :-1] != GEO_ERR_VALUE
-    val_mask_01 = padded[:-1, 1:] != GEO_ERR_VALUE
-    val_mask_10 = padded[1:, :-1] != GEO_ERR_VALUE
-    val_mask_11 = padded[1:, 1:] != GEO_ERR_VALUE
+    val_mask_0 = padded[:-1, :-1] != GEO_ERR_VALUE
+    val_mask_1 = padded[:-1, 1:] != GEO_ERR_VALUE
+    val_mask_2 = padded[1:, :-1] != GEO_ERR_VALUE
+    val_mask_3 = padded[1:, 1:] != GEO_ERR_VALUE
 
-    tri_mask_013 = val_mask_00 & val_mask_01 & val_mask_11
-    tri_mask_023 = val_mask_00 & val_mask_10 & val_mask_11
-    tri_mask_012 = val_mask_00 & val_mask_01 & val_mask_10 & np.logical_not(val_mask_11)
-    tri_mask_123 = np.logical_not(val_mask_00) & val_mask_01 & val_mask_10 & val_mask_11
+    tri_mask_013 = val_mask_0 & val_mask_1 & val_mask_3
+    tri_mask_023 = val_mask_0 & val_mask_2 & val_mask_3
+    tri_mask_012 = val_mask_0 & val_mask_1 & val_mask_2 & np.logical_not(val_mask_3)
+    tri_mask_123 = np.logical_not(val_mask_0) & val_mask_1 & val_mask_2 & val_mask_3
+
+    edge_tri_mask_013 = tri_mask_013 & np.logical_not(val_mask_2)
+    edge_tri_mask_023 = tri_mask_023 & np.logical_not(val_mask_1)
+
+    edge_mask_03 = edge_tri_mask_013 | edge_tri_mask_023
+    edge_mask_12 = tri_mask_012 | tri_mask_123
+
+    val_mask_01 = val_mask_0 & val_mask_1
+    val_mask_02 = val_mask_0 & val_mask_2
+    val_mask_13 = val_mask_1 & val_mask_3
+    val_mask_23 = val_mask_2 & val_mask_3
+
+    edge_mask_01 = val_mask_01 & np.logical_not(val_mask_23)
+    edge_mask_02 = val_mask_02 & np.logical_not(val_mask_13)
+    edge_mask_13 = val_mask_13 & np.logical_not(val_mask_02)
+    edge_mask_23 = val_mask_23 & np.logical_not(val_mask_01)
 
     indices = create_index_matrix(data)
-
     offsets = indices[:2, :2].flatten()
+    offsets = np.concat((offsets, offsets + indices[-1, -1] + 1))
+
     triangles = np.concatenate(
         [
+            # Top Surfaces
             create_triangles(indices[tri_mask_013], offsets[[0, 1, 3]]),
             create_triangles(indices[tri_mask_023], offsets[[0, 2, 3]]),
             create_triangles(indices[tri_mask_012], offsets[[0, 1, 2]]),
             create_triangles(indices[tri_mask_123], offsets[[1, 2, 3]]),
+            # Bottom Surfaces
+            create_triangles(indices[tri_mask_013], offsets[[4, 5, 7]]),
+            create_triangles(indices[tri_mask_023], offsets[[4, 6, 7]]),
+            create_triangles(indices[tri_mask_012], offsets[[4, 5, 6]]),
+            create_triangles(indices[tri_mask_123], offsets[[5, 6, 7]]),
+            # Edge Surfaces
+            create_triangles(indices[edge_mask_03], offsets[[0, 3, 4]]),
+            create_triangles(indices[edge_mask_03], offsets[[3, 4, 7]]),
+            create_triangles(indices[edge_mask_12], offsets[[1, 2, 5]]),
+            create_triangles(indices[edge_mask_12], offsets[[2, 5, 6]]),
+            create_triangles(indices[edge_mask_01], offsets[[0, 1, 4]]),
+            create_triangles(indices[edge_mask_01], offsets[[1, 4, 5]]),
+            create_triangles(indices[edge_mask_02], offsets[[0, 2, 4]]),
+            create_triangles(indices[edge_mask_02], offsets[[2, 4, 6]]),
+            create_triangles(indices[edge_mask_13], offsets[[1, 3, 5]]),
+            create_triangles(indices[edge_mask_13], offsets[[3, 5, 7]]),
+            create_triangles(indices[edge_mask_23], offsets[[2, 3, 6]]),
+            create_triangles(indices[edge_mask_23], offsets[[3, 6, 7]]),
         ]
     )
 
@@ -147,7 +190,7 @@ def main(
     data = geo_provider.get(x, y, z)
 
     z_scale = get_z_scale(z)
-    data[data != GEO_ERR_VALUE] *= z_scale
+    data[data != GEO_ERR_VALUE] = data[data != GEO_ERR_VALUE] * z_scale + offset
 
     mesh_data = create_polygon(data)
 
