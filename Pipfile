@@ -9,6 +9,7 @@ numpy = "*"
 click = "*"
 numpy-stl = "*"
 scipy = "*"
+scikit-image = "*"
 
 [dev-packages]
 black = "*"

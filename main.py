@@ -7,6 +7,7 @@ import click
 import numpy as np
 import numpy.typing as npt
 import requests
+import skimage.measure
 from stl import mesh
 
 EQUATOR_LENGTH = 40000
@@ -68,6 +69,13 @@ def concat_geo_data(
     data: list[list[Annotated[npt.NDArray[np.float32], Literal[GEO_SIZE, GEO_SIZE]]]]
 ) -> Annotated[npt.NDArray[np.float32], Literal["N", "N"]]:
     return np.block(data)
+
+
+def sample_data(
+    data: Annotated[npt.NDArray[np.float32], Literal["N", "N"]],
+    sample_rate: int,
+) -> Annotated[npt.NDArray[np.float32], Literal["N", "N"]]:
+    return skimage.measure.block_reduce(data, (sample_rate, sample_rate), np.max)
 
 
 def create_index_matrix(
@@ -185,6 +193,7 @@ def create_polygon(
 @click.option("--output", type=str, default="geo.stl")
 @click.option("--blocks", nargs=2, type=int, default=(1, 1))
 @click.option("--size", type=float, default=50.0)
+@click.option("--sample_rate", type=int, default=1)
 def main(
     x: int,
     y: int,
@@ -193,6 +202,7 @@ def main(
     output: str,
     blocks: tuple[int, int],
     size: float,
+    sample_rate: int,
 ):
     geo_provider = GeoDataProvider()
 
@@ -207,8 +217,9 @@ def main(
     valid_mask = concat_data != GEO_ERR_VALUE
     concat_data[valid_mask] = concat_data[valid_mask] * z_scale + offset
 
-    mesh_data = create_polygon(concat_data)
-    scale = size / max(concat_data.shape)
+    compressed_data = sample_data(concat_data, sample_rate)
+    mesh_data = create_polygon(compressed_data)
+    scale = size / max(compressed_data.shape)
     mesh_data *= scale
 
     geo_mesh = mesh.Mesh(np.zeros(mesh_data.shape[0], dtype=mesh.Mesh.dtype))
