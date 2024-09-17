@@ -81,11 +81,11 @@ def create_index_matrix(
 def create_vertices(
     data: Annotated[npt.NDArray[np.float32], Literal["N", "N"]],
 ) -> Annotated[npt.NDArray[np.uint32], Literal["N", "N", 3]]:
-    xlen, _ = data.shape
+    _, ylen = data.shape
     indices = create_index_matrix(data)
 
     vertices = np.transpose(
-        np.stack((indices % xlen, indices // xlen, data)),
+        np.stack((indices // ylen, indices % ylen, data)),
         axes=(1, 2, 0),
     ).reshape(-1, 3)
 
