@@ -25,7 +25,7 @@ class GeoDataProvider:
         self._cache_path = cache_path
         self._cache = {}
         if os.path.exists(cache_path):
-            self._cache = np.load(cache_path)
+            self._cache = dict(np.load(cache_path))
 
     def _download_geo_data(
         self,
@@ -36,7 +36,9 @@ class GeoDataProvider:
         url = GEO_SOURCE_URL.format(x=x, y=y, z=z)
         res = requests.get(url)
 
-        if res.status_code != 200:
+        if res.status_code == 404:
+            return np.full((GEO_SIZE, GEO_SIZE), GEO_ERR_VALUE, dtype=np.float32)
+        elif res.status_code != 200:
             raise ValueError(res.content)
 
         arr = [
@@ -65,7 +67,7 @@ class GeoDataProvider:
 def concat_geo_data(
     data: list[list[Annotated[npt.NDArray[np.float32], Literal[GEO_SIZE, GEO_SIZE]]]]
 ) -> Annotated[npt.NDArray[np.float32], Literal["N", "N"]]:
-    return np.concatenate([np.concatenate(row) for row in data])
+    return np.block(data)
 
 
 def create_index_matrix(
@@ -181,6 +183,7 @@ def create_polygon(
 @click.option("--z", type=int, default=12)
 @click.option("--offset", type=int, default=10)
 @click.option("--output", type=str, default="geo.stl")
+@click.option("--blocks", nargs=2, type=int, default=(1, 1))
 @click.option("--size", type=float, default=1.0)
 def main(
     x: int,
@@ -188,15 +191,23 @@ def main(
     z: int,
     offset: int,
     output: str,
+    blocks: tuple[int, int],
     size: float,
 ):
     geo_provider = GeoDataProvider()
-    data = geo_provider.get(x, y, z)
+
+    xblock, yblock = blocks
+    data = [
+        [geo_provider.get(xi, yj, z) for xi in range(x, x + xblock, 1)]
+        for yj in range(y, y + yblock, 1)
+    ]
+    concat_data = np.flipud(concat_geo_data(data))
 
     z_scale = get_z_scale(z)
-    data[data != GEO_ERR_VALUE] = data[data != GEO_ERR_VALUE] * z_scale + offset
+    valid_mask = concat_data != GEO_ERR_VALUE
+    concat_data[valid_mask] = concat_data[valid_mask] * z_scale + offset
 
-    mesh_data = create_polygon(data)
+    mesh_data = create_polygon(concat_data)
 
     geo_mesh = mesh.Mesh(np.zeros(mesh_data.shape[0], dtype=mesh.Mesh.dtype))
     geo_mesh.remove_duplicate_polygons = True
