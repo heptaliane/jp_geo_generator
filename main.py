@@ -184,7 +184,7 @@ def create_polygon(
 @click.option("--offset", type=int, default=10)
 @click.option("--output", type=str, default="geo.stl")
 @click.option("--blocks", nargs=2, type=int, default=(1, 1))
-@click.option("--size", type=float, default=1.0)
+@click.option("--size", type=float, default=50.0)
 def main(
     x: int,
     y: int,
@@ -201,13 +201,15 @@ def main(
         [geo_provider.get(xi, yj, z) for xi in range(x, x + xblock, 1)]
         for yj in range(y, y + yblock, 1)
     ]
-    concat_data = np.flipud(concat_geo_data(data))
+    concat_data = concat_geo_data(data)
 
     z_scale = get_z_scale(z)
     valid_mask = concat_data != GEO_ERR_VALUE
     concat_data[valid_mask] = concat_data[valid_mask] * z_scale + offset
 
     mesh_data = create_polygon(concat_data)
+    scale = size / max(concat_data.shape)
+    mesh_data *= scale
 
     geo_mesh = mesh.Mesh(np.zeros(mesh_data.shape[0], dtype=mesh.Mesh.dtype))
     geo_mesh.remove_duplicate_polygons = True
