@@ -18,11 +18,13 @@ This project uses [uv](https://docs.astral.sh/uv/) for dependency management.
 uv sync
 ```
 
+> `pyfqmr` (used for `--decimate_ratio`) is a compiled C++ extension. If installation fails on your platform, make sure you have a working C++ build toolchain, or omit `--decimate_ratio` (leave it at the default `1.0`) and skip adding `pyfqmr` if you don't need mesh simplification.
+
 If you're starting from scratch (no `pyproject.toml` yet):
 
 ```bash
 uv init
-uv add click numpy numpy-stl requests scikit-image
+uv add click numpy numpy-stl requests scikit-image pyfqmr
 ```
 
 ## Usage
@@ -57,6 +59,7 @@ Note: not all zoom levels have DEM data available for every area. Zoom level 12�
 | `--size` | float | `50.0` | Target size (mm) of the longest edge of the output model |
 | `--sample_rate` | int | `1` | Downsampling factor applied to the elevation grid before meshing (higher = coarser/faster) |
 | `--z_exaggeration` | float | `1.0` | Multiplier applied on top of the true-to-scale vertical height. `1.0` keeps real-world x/y/z proportions (relief will look subtle, since actual terrain is quite flat relative to its horizontal extent); increase (e.g. `2.0`–`5.0`) to exaggerate relief for a more dramatic/visible 3D print |
+| `--decimate_ratio` | float | `1.0` | Fraction of triangles to keep after adaptive mesh simplification (`0 < ratio < 1`). `1.0` disables simplification. Unlike `--sample_rate`, which uniformly coarsens the whole grid, this collapses triangles more in flat areas while preserving detail on ridges/peaks (uses `pyfqmr` quadric edge-collapse decimation) |
 
 ### Example
 
@@ -66,14 +69,33 @@ Generate a model of the area around Mt. Fuji at zoom level 14, stitching a 2×2 
 uv run main.py --x 14552 --y 6451 --z 14 --blocks 2 2 --sample_rate 2 --size 100 --output fuji.stl
 ```
 
+Same area, but with real-world relief exaggerated 3x so the terrain is more visually striking / easier to feel on a 3D print:
+
+```bash
+uv run main.py --x 14552 --y 6451 --z 14 --blocks 2 2 --sample_rate 2 --size 100 --z_exaggeration 3 --output fuji_exaggerated.stl
+```
+
 ## How it works
 
 1. **Download**: For each requested tile, elevation data is fetched as CSV text from GSI's `xyz/dem/{z}/{x}/{y}.txt` endpoint and cached locally (`.cache.npz`) to avoid re-downloading on subsequent runs.
 2. **Stitch**: Multiple tiles (`--blocks`) are concatenated into a single elevation grid.
-3. **Scale**: Elevation values are scaled to be consistent with the tile's real-world ground resolution at the given zoom level, then offset to create a solid base.
-4. **Downsample**: The grid is optionally reduced (`--sample_rate`) using max-pooling to reduce mesh complexity.
+3. **Scale**: Elevation values (meters) are converted into the same unit as the x/y grid indices (pixels), based on each tile's real-world ground resolution at the given zoom level (`meters_per_pixel = equator_length_m / (2**z * 256)`). This keeps the model's vertical (z) axis proportional to its horizontal (x/y) axes — a `1.0` `--z_exaggeration` produces true-to-scale real-world proportions. The result is then multiplied by `--z_exaggeration` (useful since real terrain relief is often too subtle to see at 1:1 scale) and offset to create a solid base.
+4. **Downsample**: The grid is optionally reduced (`--sample_rate`) using max-pooling to reduce mesh complexity. The vertical scale from step 3 is adjusted to account for this so the x/y/z ratio stays correct regardless of the sampling rate used.
 5. **Mesh**: The elevation grid is triangulated into a closed, solid mesh (top surface, flat bottom, and side walls), correctly handling missing/no-data cells at tile edges.
-6. **Export**: The final mesh is scaled to the requested physical size and written out as an STL file.
+6. **Export**: The mesh is scaled to the requested physical size (`--size`), optionally simplified (see below), and written out as an STL file.
+
+### Reducing triangle count
+
+Two independent knobs control the final triangle count, and can be combined:
+
+- **`--sample_rate`**: coarsens the *input elevation grid* uniformly before meshing. Fast and simple, but reduces detail everywhere equally, including in areas with interesting terrain.
+- **`--decimate_ratio`**: applies adaptive mesh simplification (quadric edge-collapse via `pyfqmr`) to the *already-built mesh*, keeping the given fraction of triangles. It collapses triangles more aggressively in flat/low-detail regions (e.g. flat sea or plains) while preserving detail in high-curvature regions (e.g. ridgelines, peaks), so it generally gives a better quality-to-triangle-count tradeoff than `--sample_rate` alone.
+
+For example, to keep only 20% of the triangles after meshing:
+
+```bash
+uv run main.py --x 14552 --y 6451 --z 14 --blocks 2 2 --size 100 --decimate_ratio 0.2 --output fuji_simplified.stl
+```
 
 ## Data Source & Attribution
 

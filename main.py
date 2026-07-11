@@ -3,6 +3,7 @@
 import os
 from typing import Annotated, Literal
 
+import pyfqmr
 import click
 import numpy as np
 import numpy.typing as npt
@@ -185,6 +186,29 @@ def create_polygon(
     return vertices[triangles]
 
 
+def simplify_mesh(
+    mesh_data: Annotated[npt.NDArray[np.float32], Literal["N", 3, 3]],
+    ratio: float,
+) -> Annotated[npt.NDArray[np.float32], Literal["M", 3, 3]]:
+    flat_vertices = mesh_data.reshape(-1, 3)
+    unique_vertices, inverse = np.unique(flat_vertices, axis=0, return_inverse=True)
+    faces = inverse.reshape(-1, 3)
+
+    target_count = max(int(faces.shape[0] * ratio), 4)
+
+    simplifier = pyfqmr.Simplify()
+    simplifier.setMesh(unique_vertices, faces)
+    simplifier.simplify_mesh(
+        target_count=target_count,
+        aggressiveness=7,
+        preserve_border=True,
+        verbose=False,
+    )
+    new_vertices, new_faces, _ = simplifier.getMesh()
+
+    return new_vertices[new_faces]
+
+
 @click.command()
 @click.option("--x", type=int, required=True)
 @click.option("--y", type=int, required=True)
@@ -195,6 +219,7 @@ def create_polygon(
 @click.option("--size", type=float, default=50.0)
 @click.option("--z_exaggeration", type=float, default=1.0)
 @click.option("--sample_rate", type=int, default=1)
+@click.option("--decimate_ratio", type=float, default=1.0)
 def main(
     x: int,
     y: int,
@@ -205,6 +230,7 @@ def main(
     size: float,
     z_exaggeration: float,
     sample_rate: int,
+    decimate_ratio: float,
 ):
     geo_provider = GeoDataProvider()
 
@@ -223,6 +249,8 @@ def main(
     mesh_data = create_polygon(compressed_data)
     scale = size / max(compressed_data.shape)
     mesh_data *= scale
+    if decimate_ratio < 1.0:
+        mesh_data = simplify_mesh(mesh_data, decimate_ratio)
 
     geo_mesh = mesh.Mesh(np.zeros(mesh_data.shape[0], dtype=mesh.Mesh.dtype))
     geo_mesh.remove_duplicate_polygons = True
