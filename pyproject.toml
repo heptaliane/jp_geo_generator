@@ -1,0 +1,14 @@
+[project]
+name = "jp-geo-generator"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "click>=8.4.2",
+    "numpy>=2.5.1",
+    "numpy-stl>=4.0.0",
+    "requests>=2.34.2",
+    "scikit-image>=0.26.0",
+    "scipy>=1.18.0",
+]
