@@ -193,7 +193,7 @@ def create_polygon(
 @click.option("--output", type=str, default="geo.stl")
 @click.option("--blocks", nargs=2, type=int, default=(1, 1))
 @click.option("--size", type=float, default=50.0)
-@click.option("--zscale", type=int, default=1)
+@click.option("--z_exaggeration", type=float, default=1.0)
 @click.option("--sample_rate", type=int, default=1)
 def main(
     x: int,
@@ -203,7 +203,7 @@ def main(
     output: str,
     blocks: tuple[int, int],
     size: float,
-    zscale: int,
+    z_exaggeration: float,
     sample_rate: int,
 ):
     geo_provider = GeoDataProvider()
@@ -215,7 +215,7 @@ def main(
     ]
     concat_data = concat_geo_data(data)
 
-    z_scale = get_z_scale(z) / sample_rate * zscale
+    z_scale = get_z_scale(z) / sample_rate * z_exaggeration
     valid_mask = concat_data != GEO_ERR_VALUE
     concat_data[valid_mask] = concat_data[valid_mask] * z_scale + offset
 

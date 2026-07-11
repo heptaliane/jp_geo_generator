@@ -56,6 +56,7 @@ Note: not all zoom levels have DEM data available for every area. Zoom level 12â
 | `--blocks` | int int | `1 1` | Number of tiles to fetch and stitch in the X and Y directions, starting from `--x`/`--y` |
 | `--size` | float | `50.0` | Target size (mm) of the longest edge of the output model |
 | `--sample_rate` | int | `1` | Downsampling factor applied to the elevation grid before meshing (higher = coarser/faster) |
+| `--z_exaggeration` | float | `1.0` | Multiplier applied on top of the true-to-scale vertical height. `1.0` keeps real-world x/y/z proportions (relief will look subtle, since actual terrain is quite flat relative to its horizontal extent); increase (e.g. `2.0`â€“`5.0`) to exaggerate relief for a more dramatic/visible 3D print |
 
 ### Example
 
