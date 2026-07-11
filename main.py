@@ -17,8 +17,8 @@ GEO_SOURCE_URL = "https://cyberjapandata.gsi.go.jp/xyz/dem/{z}/{x}/{y}.txt"
 
 
 def get_z_scale(z: int) -> float:
-    xy_length = EQUATOR_LENGTH / z
-    return GEO_SIZE / xy_length
+    meters_per_pixel = (EQUATOR_LENGTH * 1000) / (2**z * GEO_SIZE)
+    return 1 / meters_per_pixel
 
 
 class GeoDataProvider:
@@ -193,6 +193,7 @@ def create_polygon(
 @click.option("--output", type=str, default="geo.stl")
 @click.option("--blocks", nargs=2, type=int, default=(1, 1))
 @click.option("--size", type=float, default=50.0)
+@click.option("--zscale", type=int, default=1)
 @click.option("--sample_rate", type=int, default=1)
 def main(
     x: int,
@@ -202,6 +203,7 @@ def main(
     output: str,
     blocks: tuple[int, int],
     size: float,
+    zscale: int,
     sample_rate: int,
 ):
     geo_provider = GeoDataProvider()
@@ -213,7 +215,7 @@ def main(
     ]
     concat_data = concat_geo_data(data)
 
-    z_scale = get_z_scale(z)
+    z_scale = get_z_scale(z) / sample_rate * zscale
     valid_mask = concat_data != GEO_ERR_VALUE
     concat_data[valid_mask] = concat_data[valid_mask] * z_scale + offset
 
